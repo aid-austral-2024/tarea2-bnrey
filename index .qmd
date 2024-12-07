@@ -1,0 +1,220 @@
+---
+title: "Indicadores Básicos"
+subtitle: "Región de las Américas (PAHO)"
+author: "Barbara N. Rey"
+date: 12/8/24
+lang: es
+format: 
+  html:
+    embed-resources: true
+    toc: true                  
+    toc-depth: 3               
+    number-sections: true      
+    highlight-style: tango   
+    theme: cerulean              
+execute:
+  echo: false
+  warning: false
+  message: false
+server: shiny
+title-block-banner: true 
+---
+
+### Introducción
+
+El conjunto de datos de indicadores básicos regionales proporciona información de una combinación de diferentes fuentes de datos que permiten una perspectiva amplia de la situación de salud. 
+
+La Iniciativa Regional de Datos Básicos en Salud y Perfil de País (IRDB) fue lanzada por el Director de la [Organización Panamericana de la Salud (OPS)](https://www.paho.org/es) en 1995 para monitorear el logro de las metas de salud y el cumplimiento de los mandatos adoptados por los Estados Miembros y el Oficina Sanitaria Panamericana (OSP). El objetivo principal de los Indicadores Básicos es monitorear la salud de la población en las Américas a lo largo del tiempo, por país, por subregiones y por Región de las Américas. Además, los indicadores básicos sirven para medir el progreso hacia los compromisos acordados, como los mandatos y estrategias de la OPS adoptados por el país y los indicadores de desarrollo sostenible relacionados con la salud y la salud.
+
+Los indicadores básicos de la OPS brindan una visión estratégica amplia de la salud de una población. Los indicadores se desglosan por sexo y ubicación geográfica, cuando están disponibles.
+
+### Sobre los datos
+
+#### Indicadores: 
+Para el presente trabajo, los datos de los indicadores fueron extraidos del portal de indicadores básicos de la Organización Panamericana de la Salud a traves del siguiente enlace [Descarga de datos OPS](https://opendata.paho.org/es/indicadores-basicos/descarga-datos). 
+Los datos se encuentran en formato csv y albergan 299 indicadores de salud y relacionados con la salud, con datos desde 1995 hasta el presente, desagregados por edad, sexo y distribución urbano-rural, entre otros. 
+
+::: {.callout-note collapse="true" icon="false" style="background-color:#d9d9d9; border-color:  #87cefa; color: #333333; padding: 10px;"}
+
+###  Lista de indicadores incluidos en el dataset: 
+
+```{r}
+#| context: setup
+
+# Carga de paquetes necesarios 
+library(readr)
+library(knitr)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(shiny)
+library(plotly)
+library(DT)
+library(bslib)
+
+# Carga de datos
+
+indicadores <- read_csv("datos_curados/indicadores_curados.csv", 
+                        show_col_types = FALSE)
+
+# Indicadores disponibles en el dataset 
+
+nombre_indicadores <- 
+    unique(indicadores[ , "nombre_indicador"])
+
+kable(nombre_indicadores, caption = "Lista de indicadores incluidos en el dataset")
+
+```
+
+:::
+
+### Exploración de los indicadores
+
+
+```{r}
+# Shiny app
+
+# UI
+
+selectInput("nombre_indicador", 
+            "Selecciona el indicador:", 
+            choices = unique(indicadores$nombre_indicador),
+            selected = "Mediana de edad (en años)",
+            width = "100%")
+
+plotOutput("barPlot", 
+           height = "500px", 
+           hover = hoverOpts(
+             id = "plot_hover", 
+             delay = 100, 
+             delayType = "debounce", 
+             nullOutside = FALSE))
+
+plotOutput("timeSeriesPlot", height = "300px")
+```
+
+```{r}
+#| context: server
+ 
+# Server logic
+selected_country <- reactiveVal(NULL)
+
+# Reactive data filtering
+all_data <- reactive({
+  indicadores %>%
+    filter(nombre_indicador == input$nombre_indicador)
+})
+
+filtered_data <- reactive({
+  all_data() %>%
+    group_by(spatial_dim_es) %>%
+    filter(time_dim == max(time_dim, na.rm = TRUE)) %>%
+    ungroup() %>%
+    arrange(desc(numeric_value))
+})
+
+# Hover logic
+observeEvent(input$plot_hover, {
+  hover <- input$plot_hover
+  if (is.null(hover)) {
+    selected_country(NULL)
+    return()
+  }
+  x_pos <- round(hover$x)
+  if (x_pos >= 1 && x_pos <= nrow(filtered_data())) {
+    country <- filtered_data()$spatial_dim_es[x_pos]
+    selected_country(country)
+  } else {
+    selected_country(NULL)
+  }
+})
+
+
+# Render bar plot
+output$barPlot <- renderPlot({
+  data_recent <- filtered_data()
+  valor_referencia <- mean(data_recent$numeric_value, na.rm = TRUE)
+  curr_country <- selected_country()
+
+  plot_data <- data_recent %>%
+    mutate(
+      index = seq_len(n()),
+      is_highlighted = if (is.null(curr_country)) {
+        FALSE
+      } else {
+        spatial_dim_es == curr_country
+      }
+    )
+
+ggplot(plot_data, 
+         aes(x = factor(index), y = numeric_value, fill = is_highlighted)) +
+    geom_bar(stat = "identity", width = 0.8) +
+    geom_text(
+        aes(label = round(numeric_value)),
+        vjust = -0.5,                         
+        size = 3.5,
+        color = "black",
+        fontface = "bold"
+      ) +
+      scale_x_discrete(labels = plot_data$spatial_dim_es) +
+      scale_fill_manual(values = c("steelblue", "orange"),
+                        guide = "none") +
+      geom_hline(yintercept = valor_referencia,
+                 color = "red",
+                 linetype = "dashed") +
+      annotate("label",
+               x = 1,
+               y = valor_referencia,
+               label = paste("Valor Regional:", round(valor_referencia, 1)),
+               color = "red",
+               fill = "white",
+               alpha = 0.8,
+               vjust = -0.5,
+               hjust = 0,
+               size = 4) +
+      labs(title = input$nombre_indicador,
+           x = "País",
+           y = "Valor") +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.title = element_text(size = 12),
+        plot.margin = margin(t = 40, r = 20, b = 20, l = 20, unit = "pt")
+      )
+
+})
+
+# Render time series plot
+output$timeSeriesPlot <- renderPlot({
+  country <- selected_country()
+  validate(
+    need(!is.null(country), "Pasa el cursor sobre un país para ver su evolución en el tiempo.")
+  )
+
+  country_data <- all_data() %>%
+    filter(spatial_dim_es == country) %>%
+    arrange(time_dim)
+
+    ggplot(country_data,
+           aes(x = time_dim, y = numeric_value)) +
+      geom_line(color = "steelblue", linewidth = 1) +
+      geom_point(color = "steelblue", size = 3) +
+      labs(title = country,
+           subtitle = paste0("Evolución temporal: ", input$nombre_indicador, 
+                             " - Último dato disponible: ", max(country_data$time_dim)),
+           x = "Año",
+           y = "Valor") +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12)
+      )
+  })
+
+```
+
+
