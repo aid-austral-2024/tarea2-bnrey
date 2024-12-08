@@ -21,10 +21,11 @@ La estructura de archivos en el repositorio es la siguiente:
 │    ├── indicadores_curados.csv           # Datos curados. No se pudo cargar el dataset original
 ├── /script de limpieza                    # Carpeta que alberga el script de limpieza
       ├── script_limpieza.R                # script para poder curar los datos a utilizar  
-├── .gitignore                             # Archivos que Git ignorará
 ├── README.md                              # Documentación del proyecto
 ├── enunciado.md                           # Explicación de la tarea
 ├── index.qmd                              # Documento quarto interactivo
+├── index.html                             # HTML con la aplicacion shiny
+
  
 ```
 
